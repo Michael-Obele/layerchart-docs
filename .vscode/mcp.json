@@ -1,9 +1,9 @@
 {
-	"servers": {
-		"test": {
-			"url": "http://localhost:4111/api/mcp/layerChart/mcp",
-			"type": "http"
-		}
-	},
-	"inputs": []
+  "servers": {
+    "test": {
+      "url": "http://localhost:4111/api/mcp/layerChart/sse",
+      "type": "http"
+    }
+  },
+  "inputs": []
 }
