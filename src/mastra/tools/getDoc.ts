@@ -6,7 +6,7 @@ import { getGitHubUrl } from "./getSource";
 export const getDoc = createTool({
   id: "get_doc",
   description:
-    "Get the documentation content for a specific route (Hybrid: text from website + code from GitHub).",
+    "Get the documentation content for a specific route (text and code from GitHub).",
   inputSchema: z.object({
     route: z
       .string()
@@ -14,50 +14,44 @@ export const getDoc = createTool({
   }),
   execute: async ({ context }) => {
     const { route } = context;
-    const fullUrl = route.startsWith("http")
-      ? route
-      : `https://www.layerchart.com${route}`;
     const githubUrl = getGitHubUrl(route, "usage");
 
-    const results: {
-      text?: string;
-      code?: string;
-      github_url?: string;
-      error?: string;
-    } = {};
+    if (!githubUrl) {
+      return {
+        error: "Could not map route to a GitHub URL",
+        route,
+      };
+    }
 
     try {
-      // 1. Fetch rendered content from website
-      const webResponse = await fetch(fullUrl);
-      if (webResponse.ok) {
-        const html = await webResponse.text();
-        const $ = cheerio.load(html);
-
-        // Extract main content - adjust selector based on actual site structure
-        // Usually 'main' or a specific container
-        const mainContent = $("main").text().trim() || $("body").text().trim();
-        results.text = mainContent;
-      }
-
-      // 2. Fetch raw source from GitHub
-      if (githubUrl) {
-        const ghResponse = await fetch(githubUrl);
-        if (ghResponse.ok) {
-          results.code = await ghResponse.text();
-          results.github_url = githubUrl;
-        }
-      }
-
-      if (!results.text && !results.code) {
+      // Fetch the Svelte source from GitHub
+      const response = await fetch(githubUrl);
+      if (!response.ok) {
         return {
-          error: "Failed to fetch content from both website and GitHub",
-          route,
+          error: `GitHub API returned ${response.status}`,
+          github_url: githubUrl,
         };
       }
 
+      const svelteContent = await response.text();
+
+      // Parse the Svelte content with cheerio to extract text
+      const $ = cheerio.load(svelteContent);
+
+      // Remove script and style tags
+      $("script, style").remove();
+
+      // Extract text from the body, which contains the documentation content
+      const mainContent = $("body").text();
+
+      // Clean up whitespace
+      const cleanText = mainContent.replace(/\s+/g, " ").trim();
+
       return {
         route,
-        ...results,
+        text: cleanText,
+        code: svelteContent,
+        github_url: githubUrl,
       };
     } catch (error) {
       return {
