@@ -1,5 +1,4 @@
 import { createTool } from "@mastra/core/tools";
-import * as cheerio from "cheerio";
 import { z } from "zod";
 
 export const listDocs = createTool({
@@ -9,47 +8,33 @@ export const listDocs = createTool({
   inputSchema: z.object({}),
   execute: async () => {
     try {
-      // Scrape from a component page that has the sidebar/related links
-      const response = await fetch(
-        "https://www.layerchart.com/docs/components/BarChart"
-      );
-      const html = await response.text();
-      const $ = cheerio.load(html);
-
       const routes: string[] = [];
 
-      // Find the "Related" section and extract links from COMPONENTS and EXAMPLES
-      const relatedSection = $('h1:contains("Related")').nextAll();
-      let inComponents = false;
-      let inExamples = false;
-
-      relatedSection.each((_, element) => {
-        const $el = $(element);
-        if ($el.is("h2")) {
-          const text = $el.text().trim();
-          if (text === "COMPONENTS") {
-            inComponents = true;
-            inExamples = false;
-          } else if (text === "EXAMPLES") {
-            inComponents = false;
-            inExamples = true;
-          } else {
-            inComponents = false;
-            inExamples = false;
+      // Get components from GitHub API
+      const componentsRes = await fetch(
+        "https://api.github.com/repos/techniq/layerchart/contents/packages/layerchart/src/routes/docs/components"
+      );
+      if (componentsRes.ok) {
+        const components = await componentsRes.json();
+        for (const item of components) {
+          if (item.type === "dir") {
+            routes.push(`/docs/components/${item.name}`);
           }
-        } else if ((inComponents || inExamples) && $el.is("p")) {
-          // Extract links from the paragraph
-          $el.find('a[href^="/docs"]').each((_, link) => {
-            const href = $(link).attr("href");
-            if (href) {
-              const normalized = href.replace(/\/$/, "");
-              if (!routes.includes(normalized)) {
-                routes.push(normalized);
-              }
-            }
-          });
         }
-      });
+      }
+
+      // Get examples from GitHub API
+      const examplesRes = await fetch(
+        "https://api.github.com/repos/techniq/layerchart/contents/packages/layerchart/src/routes/docs/examples"
+      );
+      if (examplesRes.ok) {
+        const examples = await examplesRes.json();
+        for (const item of examples) {
+          if (item.type === "dir") {
+            routes.push(`/docs/examples/${item.name}`);
+          }
+        }
+      }
 
       return {
         count: routes.length,

@@ -40,3 +40,5 @@ dist
 .env
 *.db
 *.db-*
+
+debug/*
