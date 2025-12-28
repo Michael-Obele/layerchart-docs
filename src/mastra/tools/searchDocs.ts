@@ -4,7 +4,7 @@ import { z } from "zod";
 export const searchDocs = createTool({
   id: "search_docs",
   description:
-    "Search for documentation and components in the LayerChart repository using GitHub Search API.",
+    "Search for documentation and components in the LayerChart repository.",
   inputSchema: z.object({
     query: z
       .string()
@@ -13,59 +13,95 @@ export const searchDocs = createTool({
   execute: async ({ context }) => {
     const { query } = context;
 
-    // GitHub Search API URL
-    // We search for the query in the techniq/layerchart repo, specifically in the packages/layerchart directory
-    const searchUrl = `https://api.github.com/search/code?q=${encodeURIComponent(
-      `${query} repo:techniq/layerchart path:packages/layerchart`
-    )}`;
-
     try {
-      const response = await fetch(searchUrl, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          "User-Agent": "Mastra-MCP-Server",
-        },
-      });
+      const routes: string[] = [];
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        return {
-          error: "GitHub Search API error",
-          details: errorData.message || response.statusText,
-        };
+      // Get components from GitHub API
+      const componentsRes = await fetch(
+        "https://api.github.com/repos/techniq/layerchart/contents/packages/layerchart/src/routes/docs/components"
+      );
+      if (componentsRes.ok) {
+        const components = await componentsRes.json();
+        for (const item of components) {
+          if (item.type === "dir") {
+            routes.push(`/docs/components/${item.name}`);
+          }
+        }
       }
 
-      const data = await response.json();
-
-      // Map results to a more useful format
-      const results = data.items.map((item: any) => {
-        let route = "";
-        if (item.path.includes("src/routes/docs")) {
-          // Map back to website route
-          // packages/layerchart/src/routes/docs/components/BarChart/+page.svelte -> /docs/components/BarChart
-          route = item.path
-            .replace("packages/layerchart/src/routes", "")
-            .replace("/+page.svelte", "");
-        } else if (item.path.includes("src/lib/components")) {
-          // Map back to component route
-          // packages/layerchart/src/lib/components/BarChart.svelte -> /docs/components/BarChart
-          const name = item.path.split("/").pop().replace(".svelte", "");
-          route = `/docs/components/${name}`;
+      // Get examples from GitHub API
+      const examplesRes = await fetch(
+        "https://api.github.com/repos/techniq/layerchart/contents/packages/layerchart/src/routes/docs/examples"
+      );
+      if (examplesRes.ok) {
+        const examples = await examplesRes.json();
+        for (const item of examples) {
+          if (item.type === "dir") {
+            routes.push(`/docs/examples/${item.name}`);
+          }
         }
+      }
 
-        return {
-          name: item.name,
-          path: item.path,
-          route: route || null,
-          github_url: item.html_url,
-          score: item.score,
-        };
+      // Search through routes and content
+      const results: any[] = [];
+      const searchTerm = query.toLowerCase();
+
+      for (const route of routes) {
+        try {
+          // First check if route name matches
+          const routeName = route.split('/').pop()?.toLowerCase() || '';
+          if (routeName.includes(searchTerm)) {
+            results.push({
+              route,
+              match_type: 'route_name',
+              relevance: 'high',
+              preview: `Route: ${route}`,
+            });
+            continue; // Don't search content if route name matches
+          }
+
+          // Get documentation content
+          const githubUrl = getGitHubUrl(route, "usage");
+          if (!githubUrl) continue;
+
+          const response = await fetch(githubUrl);
+          if (!response.ok) continue;
+
+          const svelteContent = await response.text();
+          const contentLower = svelteContent.toLowerCase();
+
+          // Search for the query in the content
+          if (contentLower.includes(searchTerm)) {
+            // Extract a preview around the first match
+            const index = contentLower.indexOf(searchTerm);
+            const start = Math.max(0, index - 100);
+            const end = Math.min(svelteContent.length, index + 200);
+            const preview = svelteContent.substring(start, end).replace(/\s+/g, ' ').trim();
+
+            results.push({
+              route,
+              match_type: 'content',
+              relevance: 'medium',
+              preview: `...${preview}...`,
+            });
+          }
+        } catch (error) {
+          // Skip this route if there's an error
+          continue;
+        }
+      }
+
+      // Sort results by relevance
+      results.sort((a, b) => {
+        if (a.relevance === 'high' && b.relevance !== 'high') return -1;
+        if (b.relevance === 'high' && a.relevance !== 'high') return 1;
+        return 0;
       });
 
       return {
         query,
-        total_count: data.total_count,
-        results: results.slice(0, 10), // Return top 10 results
+        total_count: results.length,
+        results: results.slice(0, 20), // Return top 20 results
       };
     } catch (error) {
       return {
@@ -75,3 +111,23 @@ export const searchDocs = createTool({
     }
   },
 });
+
+// Helper function to map route to GitHub URL (copied from getSource.ts)
+function getGitHubUrl(route: string, type: "usage" | "implementation"): string | null {
+  if (route.startsWith("/docs/components/")) {
+    const component = route.replace("/docs/components/", "");
+    if (type === "usage") {
+      return `https://raw.githubusercontent.com/techniq/layerchart/main/packages/layerchart/src/routes/docs/components/${component}/+page.svelte`;
+    } else {
+      return `https://raw.githubusercontent.com/techniq/layerchart/main/packages/layerchart/src/lib/components/${component}.svelte`;
+    }
+  } else if (route.startsWith("/docs/examples/")) {
+    const example = route.replace("/docs/examples/", "");
+    if (type === "usage") {
+      return `https://raw.githubusercontent.com/techniq/layerchart/main/packages/layerchart/src/routes/docs/examples/${example}/+page.svelte`;
+    } else {
+      return `https://raw.githubusercontent.com/techniq/layerchart/main/packages/layerchart/src/lib/components/${example}.svelte`;
+    }
+  }
+  return null;
+}
