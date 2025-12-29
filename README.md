@@ -4,9 +4,8 @@ A Mastra-powered Model Context Protocol (MCP) server that provides structured ac
 
 ## Production Deployment
 
-|                  |                                   |                                                           |
-| ---------------- | --------------------------------- | --------------------------------------------------------- |
 | **Mastra Cloud** | `https://layerchart.mastra.cloud` | Primary choice - Zero cold start, maximum responsiveness. |
+| ---------------- | --------------------------------- | --------------------------------------------------------- |
 
 - Append `/api/mcp/layerChart/sse` for the **SSE transport** (best for editors that keep long-lived connections).
 - Append `/api/mcp/layerChart/mcp` for the **HTTP transport** (handy for CLIs and quick one-off calls).
